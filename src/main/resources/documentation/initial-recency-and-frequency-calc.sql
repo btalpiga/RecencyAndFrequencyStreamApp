@@ -11,7 +11,17 @@ where external_system_date >= now()-'2 year'::interval and external_system_date 
     ((ca.id<=:lastRmcActionId and ca.system_id = 1) or (ca.id<=:lastRrpActionId and ca.system_id = 2) )
 group by ca.system_id, ca.consumer_id;
 
+update consumers set payload = payload-'recency'-'frequency';
 
-alter table recency_and_frequency_start add column id serial;
+insert into consumers (system_id, consumer_id, payload, updated_at)
+select system_id, consumer_id,
+json_build_object('recency',
+	json_build_object('lut', round(extract(epoch from now()) * 1000)::text, 'value', round(extract(epoch from recency) * 1000)::text),
+	'frequency',
+	json_build_object('lut', round(extract(epoch from now()) * 1000)::text, 'value', frequency::text)
+), now()
+from recency_and_frequency_start
+on conflict on constraint consumers_pk do update
+set payload = consumers.payload || excluded.payload, updated_at = now();
 
 commit;
