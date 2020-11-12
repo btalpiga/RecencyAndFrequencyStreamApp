@@ -81,8 +81,8 @@ public class App {
 
     public static void initSourceTopic(List<String> topics) throws ExecutionException, InterruptedException {
         //this values should be updated on redeployment, if actions are reloaded
-        final int lastRmcActionId = 662871381;
-        final int lastRrpActionId = 2281565;
+        final int lastRmcActionId = 670349815;
+        final int lastRrpActionId = 2309077;
         //
         final String consumerGroupId = sigAppName+"-source-creator";
 

@@ -2,13 +2,7 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="901d7ae4-691b-48e4-8ce0-134a5ea329d8" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/uiDesigner.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/nyble/main/ActionsDict.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/nyble/main/ActionsDict.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/nyble/main/App.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/nyble/main/App.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/nyble/main/ConsumerActionDescriptor.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/nyble/types/ConsumerActionDescriptor.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/nyble/main/Recency.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/nyble/types/Recency.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/conf/DataSources.ds" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/conf/DataSources.ds" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -118,7 +112,14 @@
       <option name="project" value="LOCAL" />
       <updated>1604760178007</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="Small changes">
+      <created>1605190917071</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1605190917071</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -126,17 +127,18 @@
     <option name="CHECK_NEW_TODO" value="false" />
     <MESSAGE value="Change reload script" />
     <MESSAGE value="Change reload script and README.md" />
-    <option name="LAST_COMMIT_MESSAGE" value="Change reload script and README.md" />
+    <MESSAGE value="Small changes" />
+    <option name="LAST_COMMIT_MESSAGE" value="Small changes" />
   </component>
   <component name="WindowStateProjectService">
     <state x="464" y="193" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1604755725384">
       <screen x="67" y="27" width="3773" height="1053" />
     </state>
     <state x="464" y="193" key="#com.intellij.execution.impl.EditConfigurationsDialog/67.27.3773.1053@67.27.3773.1053" timestamp="1604755725384" />
-    <state x="388" y="132" width="1227" height="807" key="CommitChangelistDialog2" timestamp="1604760177899">
+    <state x="388" y="132" width="1227" height="807" key="CommitChangelistDialog2" timestamp="1605190916980">
       <screen x="67" y="27" width="3773" height="1053" />
     </state>
-    <state x="388" y="132" width="1227" height="807" key="CommitChangelistDialog2/67.27.3773.1053@67.27.3773.1053" timestamp="1604760177899" />
+    <state x="388" y="132" width="1227" height="807" key="CommitChangelistDialog2/67.27.3773.1053@67.27.3773.1053" timestamp="1605190916980" />
     <state width="1593" height="214" key="GridCell.Tab.0.bottom" timestamp="1604762249972">
       <screen x="67" y="27" width="3773" height="1053" />
     </state>
@@ -153,10 +155,10 @@
       <screen x="67" y="27" width="3773" height="1053" />
     </state>
     <state width="1593" height="214" key="GridCell.Tab.0.right/67.27.3773.1053@67.27.3773.1053" timestamp="1604762249971" />
-    <state x="601" y="271" width="800" height="528" key="Vcs.Push.Dialog.v2" timestamp="1604760186579">
+    <state x="601" y="271" width="800" height="528" key="Vcs.Push.Dialog.v2" timestamp="1605190929581">
       <screen x="67" y="27" width="3773" height="1053" />
     </state>
-    <state x="601" y="271" width="800" height="528" key="Vcs.Push.Dialog.v2/67.27.3773.1053@67.27.3773.1053" timestamp="1604760186579" />
+    <state x="601" y="271" width="800" height="528" key="Vcs.Push.Dialog.v2/67.27.3773.1053@67.27.3773.1053" timestamp="1605190929581" />
     <state x="651" y="266" width="710" height="538" key="find.popup" timestamp="1604755650267">
       <screen x="67" y="27" width="3773" height="1053" />
     </state>
