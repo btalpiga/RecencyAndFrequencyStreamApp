@@ -2,6 +2,7 @@ package com.nyble.main;
 
 import com.nyble.topics.Names;
 import com.nyble.topics.consumerActions.ConsumerActionsValue;
+import com.nyble.types.ConsumerActionDescriptor;
 
 import java.util.*;
 

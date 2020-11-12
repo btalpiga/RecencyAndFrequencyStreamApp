@@ -1,4 +1,4 @@
-package com.nyble.main;
+package com.nyble.types;
 
 import java.util.Objects;
 

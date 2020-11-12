@@ -6,6 +6,7 @@ import com.nyble.topics.TopicObjectsFactory;
 import com.nyble.topics.consumerActions.ConsumerActionsValue;
 import com.nyble.topics.consumerAttributes.ConsumerAttributesKey;
 import com.nyble.topics.consumerAttributes.ConsumerAttributesValue;
+import com.nyble.types.Recency;
 import com.nyble.util.DBUtil;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -91,6 +92,7 @@ public class App {
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        consumerProps.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 1000*60);
 
         Properties adminProps = new Properties();
         adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA_CLUSTER_BOOTSTRAP_SERVERS);
@@ -109,31 +111,36 @@ public class App {
         Thread poolActionsThread = new Thread(()->{
             KafkaConsumer<String, String> kConsumer = new KafkaConsumer<>(consumerProps);
             kConsumer.subscribe(Arrays.asList(Names.CONSUMER_ACTIONS_RMC_TOPIC, Names.CONSUMER_ACTIONS_RRP_TOPIC));
-            while(true){
-                ConsumerRecords<String, String> records = kConsumer.poll(1000*10);
-                records.forEach(record->{
-                    String provenienceTopic = record.topic();
-                    int lastAction;
-                    if(provenienceTopic.endsWith("rmc")){
-                        lastAction = lastRmcActionId;
-                    } else if(provenienceTopic.endsWith("rrp")){
-                        lastAction = lastRrpActionId;
-                    } else {
-                        return;
-                    }
+            try{
+                while(true){
+                    ConsumerRecords<String, String> records = kConsumer.poll(Duration.ofSeconds(10));
+                    records.forEach(record->{
+                        String provenienceTopic = record.topic();
+                        int lastAction;
+                        if(provenienceTopic.endsWith("rmc")){
+                            lastAction = lastRmcActionId;
+                        } else if(provenienceTopic.endsWith("rrp")){
+                            lastAction = lastRrpActionId;
+                        } else {
+                            return;
+                        }
 
-                    //filter actions
-                    ConsumerActionsValue cav = (ConsumerActionsValue) TopicObjectsFactory
-                            .fromJson(record.value(), ConsumerActionsValue.class);
-                    if(Integer.parseInt(cav.getId()) > lastAction && ActionsDict.filter(cav)){
-                        String actionDate = cav.getExternalSystemDate();
-                        String systemId = cav.getSystemId();
-                        String consumerId = cav.getConsumerId();
-                        Recency.updateConsumerRecency(systemId, consumerId, actionDate);
-                        integerProducer.send(new ProducerRecord<>(sourceTopic, systemId+"#"+consumerId, 1));
-                        logger.debug("Create {} topic input",sourceTopic);
-                    }
-                });
+                        //filter actions
+                        ConsumerActionsValue cav = (ConsumerActionsValue) TopicObjectsFactory
+                                .fromJson(record.value(), ConsumerActionsValue.class);
+                        if(Integer.parseInt(cav.getId()) > lastAction && ActionsDict.filter(cav)){
+                            String actionDate = cav.getExternalSystemDate();
+                            String systemId = cav.getSystemId();
+                            String consumerId = cav.getConsumerId();
+                            Recency.updateConsumerRecency(systemId, consumerId, actionDate);
+                            integerProducer.send(new ProducerRecord<>(sourceTopic, systemId+"#"+consumerId, 1));
+                            logger.debug("Create {} topic input",sourceTopic);
+                        }
+                    });
+                }
+            }catch(Exception e){
+                logger.error("Caught error in polling loop. Stop message processing!");
+                logger.error(e.getMessage(), e);
             }
         });
         poolActionsThread.start();
