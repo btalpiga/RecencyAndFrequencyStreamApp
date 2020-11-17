@@ -1,5 +1,6 @@
 package com.nyble.main;
 
+import com.nyble.exceptions.RuntimeSqlException;
 import com.nyble.managers.ProducerManager;
 import com.nyble.topics.Names;
 import com.nyble.topics.TopicObjectsFactory;
@@ -81,8 +82,22 @@ public class App {
 
     public static void initSourceTopic(List<String> topics) throws ExecutionException, InterruptedException {
         //this values should be updated on redeployment, if actions are reloaded
-        final int lastRmcActionId = 670349815;
-        final int lastRrpActionId = 2309077;
+        int lastRmcActionId;
+        int lastRrpActionId;
+        final String configName = "RECENCY_AND_FREQUENCY_LAST_ACTION_ID_%";
+        final String lastActIdsQ = String.format("select vals[1]::int as rmc, vals[2]::int as rrp from\n" +
+                "(\tselect array_agg(value order by key) as vals \n" +
+                "\tfrom config_parameters cp \n" +
+                "\twhere key like '%s'\n" +
+                ") foo", configName);
+        try(Connection conn = DBUtil.getInstance().getConnection("datawarehouse");
+            Statement st = conn.createStatement();
+            ResultSet rs = st.executeQuery(lastActIdsQ)){
+            lastRmcActionId = rs.getInt("rmc");
+            lastRrpActionId = rs.getInt("rrp");
+        } catch (SQLException e) {
+            throw new RuntimeSqlException(e.getMessage(), e);
+        }
         //
         final String consumerGroupId = sigAppName+"-source-creator";
 
@@ -212,7 +227,7 @@ public class App {
         logger.info("Remove actions from {} to {}", startDate, endDate);
 
         final String query = String.format("select ca.system_id, ca.consumer_id, (-1)* count(*)\n" +
-                "from consumer_actions ca join affinity.action_scores acts on ca.action_id = acts.action_id \n" +
+                "from consumer_actions ca join affinity.action_scores acts using (action_id, system_id) \n" +
                 "where external_system_date >= '%s' and external_system_date < '%s'\n" +
                 "group by ca.system_id, ca.consumer_id", startDate, endDate);
 
@@ -223,7 +238,7 @@ public class App {
             while(rs.next()){
                 int systemId = rs.getInt(1);
                 int consumerId = rs.getInt(2);
-                int cnt = rs.getInt(2);
+                int cnt = rs.getInt(3);
                 decrements.put(systemId+"#"+consumerId, cnt);
             }
         } catch (SQLException e) {
