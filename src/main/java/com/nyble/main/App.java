@@ -183,38 +183,44 @@ public class App {
         Runtime.getRuntime().addShutdownHook(new Thread(scheduler::shutdown));
     }
 
-    public static void main(String[] args) throws ExecutionException, InterruptedException {
-        SpringApplication.run(App.class,args);
+    public static void main(String[] args) {
 
-        final String sourceTopic = sigAppName+"-source";
+        try{
+            SpringApplication.run(App.class,args);
 
-        initSourceTopic(Collections.singletonList(sourceTopic));
-        scheduleBatchUpdate(sourceTopic);
+            final String sourceTopic = sigAppName+"-source";
 
-        final StreamsBuilder builder = new StreamsBuilder();
-        builder.stream(sourceTopic,Consumed.with(Serdes.String(), Serdes.Integer()))
-                .groupBy((consumer, cnt)->consumer, Grouped.with(Serdes.String(), Serdes.Integer()))
-                .reduce(Integer::sum)
-                .toStream()
-                .map( (consumer, actionCounts) -> {
-                    String[] tokens = consumer.split("#");
-                    final String key = "frequency";
-                    final String now = new Date().getTime()+"";
-                    String systemId = tokens[0];
-                    String consumerId = tokens[1];
-                    ConsumerAttributesKey cak = new ConsumerAttributesKey(Integer.parseInt(systemId), Integer.parseInt(consumerId));
-                    ConsumerAttributesValue cav = new ConsumerAttributesValue(systemId, consumerId,
-                            key, actionCounts+"", now, now);
-                    return KeyValue.pair(cak.toJson(), cav.toJson());
-                })
-                .to(Names.CONSUMER_ATTRIBUTES_TOPIC, Produced.with(Serdes.String(), Serdes.String()));
-        Topology topology = builder.build();
-        logger.debug(topology.describe().toString());
-        KafkaStreams streams = new KafkaStreams(topology, streamsConfig);
-        streams.cleanUp();
-        streams.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
+            initSourceTopic(Collections.singletonList(sourceTopic));
+            scheduleBatchUpdate(sourceTopic);
 
+            final StreamsBuilder builder = new StreamsBuilder();
+            builder.stream(sourceTopic,Consumed.with(Serdes.String(), Serdes.Integer()))
+                    .groupBy((consumer, cnt)->consumer, Grouped.with(Serdes.String(), Serdes.Integer()))
+                    .reduce(Integer::sum)
+                    .toStream()
+                    .map( (consumer, actionCounts) -> {
+                        String[] tokens = consumer.split("#");
+                        final String key = "frequency";
+                        final String now = new Date().getTime()+"";
+                        String systemId = tokens[0];
+                        String consumerId = tokens[1];
+                        ConsumerAttributesKey cak = new ConsumerAttributesKey(Integer.parseInt(systemId), Integer.parseInt(consumerId));
+                        ConsumerAttributesValue cav = new ConsumerAttributesValue(systemId, consumerId,
+                                key, actionCounts+"", now, now);
+                        return KeyValue.pair(cak.toJson(), cav.toJson());
+                    })
+                    .to(Names.CONSUMER_ATTRIBUTES_TOPIC, Produced.with(Serdes.String(), Serdes.String()));
+            Topology topology = builder.build();
+            logger.debug(topology.describe().toString());
+            KafkaStreams streams = new KafkaStreams(topology, streamsConfig);
+            streams.cleanUp();
+            streams.start();
+            Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
+        }catch(Exception e){
+            logger.error(e.getMessage(), e);
+            logger.error("EXITING");
+            System.exit(1);
+        }
     }
 
     public static void updateCounts(String intermediateTopic) throws Exception {
