@@ -43,7 +43,7 @@ public class ActionsDict {
         registerAction(new ConsumerActionDescriptor(3092, Names.RMC_SYSTEM_ID+""));
         registerAction(new ConsumerActionDescriptor(3135, Names.RMC_SYSTEM_ID+""));
         registerAction(new ConsumerActionDescriptor(3147, Names.RMC_SYSTEM_ID+""));
-        registerAction(new ConsumerActionDescriptor(3149, Names.RMC_SYSTEM_ID+""));
+//        registerAction(new ConsumerActionDescriptor(3149, Names.RMC_SYSTEM_ID+""));
 
         registerAction(new ConsumerActionDescriptor(1730, Names.RRP_SYSTEM_ID+""));
         registerAction(new ConsumerActionDescriptor(1775, Names.RRP_SYSTEM_ID+""));
