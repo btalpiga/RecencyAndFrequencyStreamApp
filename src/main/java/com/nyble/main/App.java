@@ -145,8 +145,13 @@ public class App {
                         }
 
                         //filter actions
-                        ConsumerActionsValue cav = (ConsumerActionsValue) TopicObjectsFactory
+                        ConsumerActionsValue cav;
+                        try{
+                            cav = (ConsumerActionsValue) TopicObjectsFactory
                                 .fromJson(record.value(), ConsumerActionsValue.class);
+                        }catch(Exception exp){
+                            throw new RuntimeException(record.value(), exp);
+                        }
                         if(Integer.parseInt(cav.getId()) > lastAction && ActionsDict.filter(cav)){
                             String actionDate = cav.getExternalSystemDate();
                             String systemId = cav.getSystemId();
