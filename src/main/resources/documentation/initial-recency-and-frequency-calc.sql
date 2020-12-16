@@ -11,7 +11,7 @@ where external_system_date >= now()-'2 year'::interval and external_system_date 
     ((ca.id<=:lastRmcActionId and ca.system_id = 1) or (ca.id<=:lastRrpActionId and ca.system_id = 2) )
 group by ca.system_id, ca.consumer_id;
 
-update consumers set payload = payload-'recency'-'frequency';
+update consumers set payload = payload-'recency'-'frequency', updated_at = now();
 
 insert into consumers (system_id, consumer_id, payload, updated_at)
 select system_id, consumer_id,

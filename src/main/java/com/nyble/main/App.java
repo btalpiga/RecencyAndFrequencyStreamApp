@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ConfigurableApplicationContext;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -37,10 +38,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 @SpringBootApplication(scanBasePackages = {"com.nyble.rest"})
 public class App {
@@ -150,7 +148,8 @@ public class App {
                             cav = (ConsumerActionsValue) TopicObjectsFactory
                                 .fromJson(record.value(), ConsumerActionsValue.class);
                         }catch(Exception exp){
-                            throw new RuntimeException(record.value(), exp);
+                            logger.error("Last corrupt record key={}, value={}",record.key(), record.value());
+                            throw exp;
                         }
                         if(Integer.parseInt(cav.getId()) > lastAction && ActionsDict.filter(cav)){
                             String actionDate = cav.getExternalSystemDate();
@@ -167,10 +166,11 @@ public class App {
                 logger.error(e.getMessage(), e);
             }
         });
+        poolActionsThread.setDaemon(true);
         poolActionsThread.start();
     }
 
-    public static void scheduleBatchUpdate(String intermediateTopic){
+    public static ScheduledExecutorService scheduleBatchUpdate(String intermediateTopic){
         final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         final Runnable task = ()->{
             try {
@@ -186,17 +186,17 @@ public class App {
         logger.info("Task will start in: "+delay.toMillis()+" millis");
 
         Runtime.getRuntime().addShutdownHook(new Thread(scheduler::shutdown));
+        return scheduler;
     }
 
     public static void main(String[] args) {
-
+        ConfigurableApplicationContext restApp = null;
+        ExecutorService scheduler = null;
+        final String sourceTopic = sigAppName+"-source";
         try{
-            SpringApplication.run(App.class,args);
-
-            final String sourceTopic = sigAppName+"-source";
-
+            restApp = SpringApplication.run(App.class,args);
             initSourceTopic(Collections.singletonList(sourceTopic));
-            scheduleBatchUpdate(sourceTopic);
+            scheduler = scheduleBatchUpdate(sourceTopic);
 
             final StreamsBuilder builder = new StreamsBuilder();
             builder.stream(sourceTopic,Consumed.with(Serdes.String(), Serdes.Integer()))
@@ -222,6 +222,8 @@ public class App {
             streams.start();
             Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
         }catch(Exception e){
+            if(restApp != null){restApp.close();}
+            if(scheduler != null){scheduler.shutdown();}
             logger.error(e.getMessage(), e);
             logger.error("EXITING");
             System.exit(1);
