@@ -16,7 +16,9 @@ update consumers set payload = payload-'recency'-'frequency', updated_at = now()
 insert into consumers (system_id, consumer_id, payload, updated_at)
 select system_id, consumer_id,
 json_build_object('recency',
-	json_build_object('lut', round(extract(epoch from now()) * 1000)::text, 'value', round(extract(epoch from recency) * 1000)::text)
+	json_build_object('lut', round(extract(epoch from now()) * 1000)::text, 'value', round(extract(epoch from recency) * 1000)::text),
+	'frequency',
+	json_build_object('lut', round(extract(epoch from now()) * 1000)::text, 'value', frequency::text)
 ), now()
 from recency_and_frequency_start
 on conflict on constraint consumers_pk do update

@@ -1,27 +1,16 @@
 package com.nyble.main;
 
 import com.nyble.exceptions.RuntimeSqlException;
+import com.nyble.facades.kafkaConsumer.KafkaConsumerFacade;
 import com.nyble.managers.ProducerManager;
+import com.nyble.processing.ActionProcessor;
 import com.nyble.topics.Names;
-import com.nyble.topics.TopicObjectsFactory;
-import com.nyble.topics.consumerActions.ConsumerActionsValue;
 import com.nyble.topics.consumerAttributes.ConsumerAttributesKey;
 import com.nyble.topics.consumerAttributes.ConsumerAttributesValue;
-import com.nyble.types.Recency;
 import com.nyble.util.DBUtil;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.*;
-import org.apache.kafka.streams.*;
-import org.apache.kafka.streams.kstream.Consumed;
-import org.apache.kafka.streams.kstream.Grouped;
-import org.apache.kafka.streams.kstream.Produced;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -45,18 +34,17 @@ public class App {
 
     final static String KAFKA_CLUSTER_BOOTSTRAP_SERVERS = "10.100.1.17:9093";
     final static Logger logger = LoggerFactory.getLogger(App.class);
-    final static String sigAppName = "recency-frequency";
-    final static String appName = sigAppName+"-stream";
-    final static Properties streamsConfig = new Properties();
+    final static Properties consumerProps = new Properties();
     final static Properties producerProps = new Properties();
-    static KafkaProducer<String, Integer> integerProducer;
-    static KafkaProducer<String, String> stringProducer;
+    public static ProducerManager producerManager;
+    public static int lastRmcActionId;
+    public static int lastRrpActionId;
     static{
-        streamsConfig.put(StreamsConfig.APPLICATION_ID_CONFIG, appName);
-        streamsConfig.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA_CLUSTER_BOOTSTRAP_SERVERS);
-        streamsConfig.put(StreamsConfig.NUM_STREAM_THREADS_CONFIG, 4);
-        streamsConfig.put(StreamsConfig.REPLICATION_FACTOR_CONFIG, 2);
-        streamsConfig.put(StreamsConfig.PROCESSING_GUARANTEE_CONFIG, StreamsConfig.EXACTLY_ONCE);
+        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "consumer-recency-and-frequency");
+        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA_CLUSTER_BOOTSTRAP_SERVERS);
+        consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
         producerProps.put("bootstrap.servers", KAFKA_CLUSTER_BOOTSTRAP_SERVERS);
         producerProps.put("acks", "all");
@@ -66,22 +54,14 @@ public class App {
         producerProps.put("buffer.memory", 33554432);
         producerProps.put("key.serializer", StringSerializer.class.getName());
         producerProps.put("value.serializer", IntegerSerializer.class.getName());
-        integerProducer = new KafkaProducer<>(producerProps);
-        producerProps.put("value.serializer", StringSerializer.class.getName());
-        stringProducer = ProducerManager.getInstance(producerProps).getProducer();
+        producerManager = ProducerManager.getInstance(producerProps);
         Runtime.getRuntime().addShutdownHook(new Thread(()->{
-            integerProducer.flush();
-            integerProducer.close();
-
-            stringProducer.flush();
-            stringProducer.close();
+            producerManager.getProducer().flush();
+            producerManager.getProducer().close();
         }));
     }
 
-    public static void initSourceTopic(List<String> topics) throws ExecutionException, InterruptedException {
-        //this values should be updated on redeployment, if actions are reloaded
-        int lastRmcActionId;
-        int lastRrpActionId;
+    public static void initLastActionIds(){
         final String configName = "RECENCY_AND_FREQUENCY_LAST_ACTION_ID_%";
         final String lastActIdsQ = String.format("select vals[1]::int as rmc, vals[2]::int as rrp from\n" +
                 "(\tselect array_agg(value order by key) as vals \n" +
@@ -100,82 +80,24 @@ public class App {
         } catch (SQLException e) {
             throw new RuntimeSqlException(e.getMessage(), e);
         }
-        //
-        final String consumerGroupId = sigAppName+"-source-creator";
-
-        Properties consumerProps = new Properties();
-        consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroupId);
-        consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA_CLUSTER_BOOTSTRAP_SERVERS);
-        consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-        consumerProps.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, 1000*60);
-
-        Properties adminProps = new Properties();
-        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA_CLUSTER_BOOTSTRAP_SERVERS);
-        AdminClient adminClient = AdminClient.create(adminProps);
-        Set<String> existingTopics = adminClient.listTopics().names().get();
-        for(String checkTopic : topics){
-            if(!existingTopics.contains(checkTopic)){
-                int numPartitions = 4;
-                short replFact = 2;
-                NewTopic st = new NewTopic(checkTopic, numPartitions, replFact).configs(new HashMap<>());
-                adminClient.createTopics(Collections.singleton(st));
-            }
-        }
-
-        String sourceTopic = topics.get(0);
-        Thread poolActionsThread = new Thread(()->{
-            KafkaConsumer<String, String> kConsumer = new KafkaConsumer<>(consumerProps);
-            kConsumer.subscribe(Arrays.asList(Names.CONSUMER_ACTIONS_RMC_TOPIC, Names.CONSUMER_ACTIONS_RRP_TOPIC));
-            try{
-                while(true){
-                    ConsumerRecords<String, String> records = kConsumer.poll(Duration.ofSeconds(10));
-                    records.forEach(record->{
-                        String provenienceTopic = record.topic();
-                        int lastAction;
-                        if(provenienceTopic.endsWith("rmc")){
-                            lastAction = lastRmcActionId;
-                        } else if(provenienceTopic.endsWith("rrp")){
-                            lastAction = lastRrpActionId;
-                        } else {
-                            return;
-                        }
-
-                        //filter actions
-                        ConsumerActionsValue cav;
-                        try{
-                            cav = (ConsumerActionsValue) TopicObjectsFactory
-                                .fromJson(record.value(), ConsumerActionsValue.class);
-                        }catch(Exception exp){
-                            logger.error("Last corrupt record key={}, value={}",record.key(), record.value());
-                            throw exp;
-                        }
-                        if(Integer.parseInt(cav.getId()) > lastAction && ActionsDict.filter(cav)){
-                            String actionDate = cav.getExternalSystemDate();
-                            String systemId = cav.getSystemId();
-                            String consumerId = cav.getConsumerId();
-                            Recency.updateConsumerRecency(systemId, consumerId, actionDate);
-                            integerProducer.send(new ProducerRecord<>(sourceTopic, systemId+"#"+consumerId, 1));
-                            logger.debug("Create {} topic input",sourceTopic);
-                        }
-                    });
-                }
-            }catch(Exception e){
-                logger.error("Caught error in polling loop. Stop message processing!");
-                logger.error(e.getMessage(), e);
-            }
-        });
-        poolActionsThread.setDaemon(true);
-        poolActionsThread.start();
     }
 
-    public static ScheduledExecutorService scheduleBatchUpdate(String intermediateTopic){
+    public static List<KafkaConsumerFacade<String, String>> initKafkaConsumers(){
+        KafkaConsumerFacade<String, String> consumerActionsFacade = new KafkaConsumerFacade<>(consumerProps,
+                2, KafkaConsumerFacade.PROCESSING_TYPE_BATCH);
+        consumerActionsFacade.subscribe(Arrays.asList(Names.CONSUMER_ACTIONS_RMC_TOPIC, Names.CONSUMER_ACTIONS_RRP_TOPIC));
+        consumerActionsFacade.startPolling(Duration.ofSeconds(10), ActionProcessor.class);
+
+        return Collections.singletonList(consumerActionsFacade);
+    }
+
+
+    public static ScheduledExecutorService scheduleBatchUpdate(){
         final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         final Runnable task = ()->{
             try {
                 logger.info("Start update recency and frequency");
-                updateCounts(intermediateTopic);
+                updateCounts();
                 logger.info("End update recency and frequency");
             } catch (Exception e) {
                 logger.error(e.getMessage(), e);
@@ -185,52 +107,54 @@ public class App {
         scheduler.scheduleAtFixedRate(task, delay.toMillis(), Duration.ofHours(1).toMillis(), TimeUnit.MILLISECONDS);
         logger.info("Task will start in: "+delay.toMillis()+" millis");
 
-        Runtime.getRuntime().addShutdownHook(new Thread(scheduler::shutdown));
         return scheduler;
     }
 
-    public static void main(String[] args) {
-        ConfigurableApplicationContext restApp = null;
-        ExecutorService scheduler = null;
-        final String sourceTopic = sigAppName+"-source";
-        try{
-            restApp = SpringApplication.run(App.class,args);
-            initSourceTopic(Collections.singletonList(sourceTopic));
-            scheduler = scheduleBatchUpdate(sourceTopic);
+    public static void cleanUp(ExecutorService scheduler, ConfigurableApplicationContext restApp,
+                               List<KafkaConsumerFacade<String, String>> consumerFacades ){
+        Runtime.getRuntime().addShutdownHook(new Thread(()->{
+            if(restApp != null){
+                logger.warn("Closing rest server");
+                restApp.close();
+                logger.warn("Rest server closed");
+            }
+            if(scheduler != null){
+                logger.warn("Closing decrement scheduler");
+                scheduler.shutdown();
+                try {
+                    scheduler.awaitTermination(100, TimeUnit.SECONDS);
+                    logger.warn("Decrement scheduler closed");
+                } catch (InterruptedException e) {
+                    logger.error("Force killed scheduler", e);
+                }
+            }
+            for(KafkaConsumerFacade<String, String> consumerFacade : consumerFacades){
+                try {
+                    logger.warn("Closing kafka consumer facade");
+                    consumerFacade.stopPolling();
+                    logger.warn("Kafka consumer facade closed");
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }));
+    }
 
-            final StreamsBuilder builder = new StreamsBuilder();
-            builder.stream(sourceTopic,Consumed.with(Serdes.String(), Serdes.Integer()))
-                    .groupBy((consumer, cnt)->consumer, Grouped.with(Serdes.String(), Serdes.Integer()))
-                    .reduce(Integer::sum)
-                    .toStream()
-                    .map( (consumer, actionCounts) -> {
-                        String[] tokens = consumer.split("#");
-                        final String key = "frequency";
-                        final String now = new Date().getTime()+"";
-                        String systemId = tokens[0];
-                        String consumerId = tokens[1];
-                        ConsumerAttributesKey cak = new ConsumerAttributesKey(Integer.parseInt(systemId), Integer.parseInt(consumerId));
-                        ConsumerAttributesValue cav = new ConsumerAttributesValue(systemId, consumerId,
-                                key, actionCounts+"", now, now);
-                        return KeyValue.pair(cak.toJson(), cav.toJson());
-                    })
-                    .to(Names.CONSUMER_ATTRIBUTES_TOPIC, Produced.with(Serdes.String(), Serdes.String()));
-            Topology topology = builder.build();
-            logger.debug(topology.describe().toString());
-            KafkaStreams streams = new KafkaStreams(topology, streamsConfig);
-            streams.cleanUp();
-            streams.start();
-            Runtime.getRuntime().addShutdownHook(new Thread(streams::close));
+    public static void main(String[] args) {
+
+        try{
+            ConfigurableApplicationContext restApp = SpringApplication.run(App.class, args);
+            ExecutorService scheduler = scheduleBatchUpdate();
+            initLastActionIds();
+            List<KafkaConsumerFacade<String, String>> consumerFacades = initKafkaConsumers();
+            cleanUp(scheduler, restApp, consumerFacades);
         }catch(Exception e){
-            if(restApp != null){restApp.close();}
-            if(scheduler != null){scheduler.shutdown();}
             logger.error(e.getMessage(), e);
             logger.error("EXITING");
-            System.exit(1);
         }
     }
 
-    public static void updateCounts(String intermediateTopic) throws Exception {
+    public static void updateCounts() throws Exception {
         Map<String, Integer> decrements = new HashMap<>();
         final DateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm");
         final String startDate = getLastDate();
@@ -240,6 +164,7 @@ public class App {
         now.set(Calendar.SECOND, 0);
         now.set(Calendar.MINUTE, 0);
         final String endDate = sdf.format(now.getTime());
+        final String currentTime = System.currentTimeMillis()+"";
 
         logger.info("Remove actions from {} to {}", startDate, endDate);
 
@@ -263,10 +188,16 @@ public class App {
         }
 
         for(Map.Entry<String, Integer> e : decrements.entrySet()){
-            String keyStr = e.getKey();
-            Integer valStr = e.getValue();
-            logger.debug("Sending {} and {} to {}", keyStr, valStr, intermediateTopic);
-            integerProducer.send(new ProducerRecord<>(intermediateTopic, keyStr, valStr));
+            String[] consumerIdTokens = e.getKey().split("#");
+            ConsumerAttributesKey cak = new ConsumerAttributesKey(Integer.parseInt(consumerIdTokens[0]),
+                    Integer.parseInt(consumerIdTokens[1]));
+            ConsumerAttributesValue cav = new ConsumerAttributesValue(consumerIdTokens[0],
+                    consumerIdTokens[2],
+                    "frequency", e.getValue()+"", currentTime, currentTime);
+            String keyStr = cak.toJson();
+            String valStr = cav.toJson();
+            logger.debug("Sending {} and {} to {}", keyStr, valStr, Names.CONSUMER_ATTRIBUTES_TOPIC);
+            producerManager.getProducer().send(new ProducerRecord<>(Names.CONSUMER_ATTRIBUTES_TOPIC, keyStr, valStr));
         }
         updateLastDate(endDate);
     }
